@@ -15,15 +15,51 @@ scene.title = "Minimal Viable Product"
 
 # (1) field objects are white rects attached to a layer, grouped
 class Fields(w.Group):
-    def __init__(self, layer):
+    def __init__(self, layer, ypos=25, bgcolor=None):
         super().__init__(self)
         self.layer = layer
-        [self.square((25+35*i,65)) for i in range(11)]
-    def square(self, pos):
+        [self.square(i, ypos, color=bgcolor) for i in range(11)]
+# (7) labels for green fields in top margin
+    def square(self, i, ypos, color='white'):
+        size = 40
+        pos = (25+35*i,ypos)
+        height = 60 if color == colors[2] else size
         self.layer.add_rect(
-            color='white',width=30,height=30,pos=pos)
+            color=color,width=size,height=height,pos=pos)
+        size = height = 30
+        self.layer.add_rect(
+            color='white',width=size,height=height,pos=pos)
+        if color == colors[2]:
+            self.layer.add_label(str(int(0.5*(i+1)*(i+2))),
+                    color='black',fontsize=11,align='center',
+                    pos=(pos[0]+2,pos[1]-18))
+# (8) labels for oranges fields in squares
+        if color == colors[3]:
+            if i in [3, 6, 8, 10]:
+                self.layer.add_label("x2",
+                        color=colors[3],fontsize=13,align='center',
+                        pos=(pos[0]+2,pos[1]+4))
+# (9) less than sign polygons for purple fields
+        if color == colors[4]:
+            if i > 0:
+                self.lt(pos)
+    def lt(self, pos):
+        _lt_bg = self.layer.add_polygon(color=colors[4], fill=True, vertices=\
+                        [(-5,0),
+                         (+8,-9),
+                         (+8,+9),
+                        ], pos=(pos[0]-20,pos[1]))
+        _lt_fg = self.layer.add_polygon(color='white', fill=True, vertices=\
+                        [(-1,0),
+                         (+6,-5),
+                         (+6,+5),
+                        ], pos=(pos[0]-20,pos[1]))
+        return (_lt_bg, _lt_fg)
 
-greens = Fields(scene.layers[10])
+
+greens  = Fields(scene.layers[10], ypos=scene.height-105, bgcolor=colors[2])
+oranges = Fields(scene.layers[10], ypos=scene.height-65, bgcolor=colors[3])
+purples = Fields(scene.layers[10], ypos=scene.height-25, bgcolor=colors[4])
 
 # (2) die needs to be thrown, drawn and grouped (no dots)
 class Dice(w.Group):
