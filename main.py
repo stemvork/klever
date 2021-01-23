@@ -291,6 +291,7 @@ dice = Dice(scene.layers[20])
 scene.layers[10].add_rect(color='#444444',width=scene.width,
         height=40,pos=(scene.width/2, 70))
 silver = None
+fixed  = None
 
 # (4) press space to test new turn/throwing dice again
 @w.event
@@ -324,9 +325,10 @@ def click_die_then_field(pos):
 # (12) put the value into the field if purple or orange
 # (14) put an X in the field if green
 def play_to_field(pos):
-    global cdtf_expect, cdtf_die, dice, silver
+    global cdtf_expect, cdtf_die, dice, silver, fixed
     mx, my  = pos
     success = False
+    print(dice)
     die = dice.dice[cdtf_die]
     value = die.value
 
@@ -338,12 +340,21 @@ def play_to_field(pos):
         success = purples.play(die)
     if success:
         cdtf_expect = 0
-        if silver is None:
+# (49) this is new, and quite hard to get right
+        lower_dice = reversed([i for i, _die in enumerate(dice.dice) 
+                if _die.value < die.value and _die.color != die.color])
+        lower_dice = [] if lower_dice is None else lower_dice
+        for ldid in lower_dice:
+            if silver is None:
 # (40) layer index not working #FIXME 
-            silver = Dice(scene.layers[30], dice=[dice.take(cdtf_die)],
-                    ypos=70)
+                silver = Dice(scene.layers[30], dice=[dice.take(ldid)],
+                        ypos=70)
+            else:
+                silver.add(dice.take(ldid)) 
+        if fixed is None:
+            fixed = Dice(scene.layers[30], dice=[dice.take(cdtf_die)], ypos=115)
         else:
-            silver.add(dice.take(cdtf_die)) 
+            fixed.add(dice.take(cdtf_die))
         dice.arrange()
         cdtf_die = None
         return True
@@ -361,14 +372,16 @@ state = State.THROWN
 
 @w.event
 def on_mouse_down(pos):
-    global state, dice, silver
+    global state, dice, silver, fixed
     if state == State.THROWN:
         if click_die_then_field(pos):
-            if len(silver.dice) == 3:
+            if len(fixed.dice) == 3:
                 state = State.DONE
                 dice.clear()
+                fixed.clear()
                 silver.clear()
                 dice = Dice(scene.layers[20])
+                fixed = None
                 silver = None
                 state = State.THROWN
             else:
