@@ -1,10 +1,13 @@
 import wasabi2d as w
 import random # needed for die
-from enum import Enum
+from enum import Enum # needed for state
 from functools import reduce # for bounds union
+from bisect import insort # for cdtf_die into lower_dice
 
 # (3) define some _pretty_ distinguishable colors
 colors = ["#fed402","#0477bb","#02a039", "#ef7c02","#925ea4", "#ffffff"]
+# (52) define color names for easier debugging
+names  = ["yellow","blue","green","orange","purple","white"]
 
 # (6) always add tuples
 def add(s,t): return tuple(map(sum, zip(s,t)))
@@ -46,9 +49,9 @@ class Fields(w.Group):
 # (13) return false if invalid move
     def play(self, die):
         value, color = die.value, die.color
-        if self._same_or_white(die):
 # (30) move non-color specific checks in play and cross
 # (46) fix smelly nested ifs in play logic
+        if self._same_or_white(die):
             if self._empty(): return self._play(die)
             if self.color == colors[2]: # green
                 if int("12345123456"[len(self.scores)]) <= value:
@@ -208,7 +211,7 @@ class Dice(w.Group):
 # (33) in fact, change to list of Die instances
         if dice == []:
             self.dice = [Die(layer=self.layer, color=i) for i in range(6)]
-# (20) allow the making of empty dice object
+# (20) allow the making of preset dice object
         else:
             self.dice = dice
         self.rects = w.Group([die.rect for die in self.dice])
@@ -219,10 +222,6 @@ class Dice(w.Group):
     def get_bound(self): 
         bounds = [rect.bounds for rect in self.rects]
         return reduce(lambda a, b: a.union(b), bounds)
-        # _bound = bounds[0]
-        # for bound in bounds[1:]:
-        #     _bound = _bound.union(bound)
-        # return _bound
 # (37) arrange the dice in a smart way
     def arrange(self):
         n = len(self.dice)
@@ -233,11 +232,8 @@ class Dice(w.Group):
 # (36) rewrite the die class to fit the following usage
         self.rects.pos = pos
         self.dots.pos = pos
-        # pos = add((-self.get_bound().width/2+15,0),pos)
-        # self.rects.pos = pos
-        # self.dots.pos  = pos
     def select(self, pos): # returns index only
-# (43) fix bug regarding pressing besides a die
+# (43) fixed bug regarding pressing besides a die
         dids = [i for i, die in enumerate(self.dice) if\
                 die.rect.bounds.collidepoint(pos)]
         return dids[0] if dids else None
@@ -250,7 +246,10 @@ class Dice(w.Group):
         self.dots.append(_die.dots)
         self.dice.append(_die)
         self.arrange()
-    def take(self, i):
+# (52) take by color rather than index
+    def take(self, color):
+        i = [i for i, _die in enumerate(self.dice) if _die.color == color][0]
+# (51) maybe use filter(lambda x: x.rect != die.rect, self.rects)
         _list1 = self.rects.explode()
         _list2 = self.dots.explode()
         _subl1 = _list1[0:i]+_list1[i+1:]
@@ -262,28 +261,12 @@ class Dice(w.Group):
     def clear(self):
         self.rects.clear()
         self.dots.clear()
-        # self.clear()
-    # def discard(self, dindex): # TODO
-    #     self.rects[dindex].clear()
-    #     self.dots[dindex].clear()
-    #     self.ids.pop(dindex)
-    #     self.values.pop(dindex)
-    #     self.rects.pop(dindex)
-    #     self.dots.pop(dindex)
     def throw(self, i=None):
         for die in self.dice:
             dots = die.throw() 
             self.dots.append(dots)
-        # self.arrange()
-        # # values, rects, dots = zip(*self.dice)
-        # [dot.clear() for dot in self.dots]
-        # self.ids    = [0, 1, 2, 3, 4, 5]
-        # self.values = [random.randint(1,6) for i in range(6)]
-        # self.dots   = [w.Group(self.adddots(rect.pos, value)) 
-        #         for rect, value in zip(self.rects, self.values)]
-        # # self.dice = list(zip(new_values, rects, new_dots))
     def __str__(self):
-        return ", ".join([f"{die.color}:{die.value}" for die in self.dice])
+        return ", ".join([f"{names[die.color]}:{die.value}" for die in self.dice])
 
 dice = Dice(scene.layers[20])
 
@@ -301,8 +284,14 @@ def on_key_down(key):
         # dice.throw()
         print(dice)
 
-liney = tops[0]-20
-# scene.layers[100].add_line([(0,liney),(scene.width,liney)],color='red')
+# (50) function to draw debugging lines
+def debug_line(layer, hor=True, pos=scene.width/2):
+    if hor:
+        layer.add_line([(0,pos),(scene.width,pos)],color='red')
+    else:
+        layer.add_line([(pos,0),(pos,scene.height)],color='red')
+
+ # debug_line(scene.layers[100], pos=tops[0]-15)
 # (10) click a die to play it to a field
 cdtf_expect = 0 # 0 for die, 1 for field
 cdtf_die = None
@@ -328,7 +317,6 @@ def play_to_field(pos):
     global cdtf_expect, cdtf_die, dice, silver, fixed
     mx, my  = pos
     success = False
-    print(dice)
     die = dice.dice[cdtf_die]
     value = die.value
 
@@ -340,21 +328,24 @@ def play_to_field(pos):
         success = purples.play(die)
     if success:
         cdtf_expect = 0
-# (49) this is new, and quite hard to get right
-        lower_dice = reversed([i for i, _die in enumerate(dice.dice) 
-                if _die.value < die.value and _die.color != die.color])
-        lower_dice = [] if lower_dice is None else lower_dice
-        for ldid in lower_dice:
-            if silver is None:
-# (40) layer index not working #FIXME 
-                silver = Dice(scene.layers[30], dice=[dice.take(ldid)],
-                        ypos=70)
-            else:
-                silver.add(dice.take(ldid)) 
         if fixed is None:
-            fixed = Dice(scene.layers[30], dice=[dice.take(cdtf_die)], ypos=115)
+            fixed = Dice(scene.layers[30],dice=[dice.take(die.color)],ypos=115)
         else:
-            fixed.add(dice.take(cdtf_die))
+            fixed.add(dice.take(die.color))
+        lower_dice = [_die for i, _die in enumerate(dice.dice)
+                if _die.value < fixed.dice[-1].value
+                and _die.color != fixed.dice[-1].color]
+        # print('fixed', fixed, 'and dice', dice, 'yields')
+        # print('lower', [f"{names[die.color]}:{die.value}" for die in
+            # lower_dice])
+        for die in reversed(lower_dice):
+            if silver is None:
+                silver = Dice(scene.layers[30], 
+                        dice=[dice.take(die.color)],ypos=70)
+            else:
+                silver.add(dice.take(die.color)) 
+# (49) this is new, and quite hard to get right
+# (40) layer index not working
         dice.arrange()
         cdtf_die = None
         return True
@@ -375,7 +366,7 @@ def on_mouse_down(pos):
     global state, dice, silver, fixed
     if state == State.THROWN:
         if click_die_then_field(pos):
-            if len(fixed.dice) == 3:
+            if len(fixed.dice) == 3 or len(dice.dice) < 1:
                 state = State.DONE
                 dice.clear()
                 fixed.clear()
@@ -384,11 +375,11 @@ def on_mouse_down(pos):
                 fixed = None
                 silver = None
                 state = State.THROWN
+                print('------------------')
+                print('fixed', fixed, 'and dice', dice)
             else:
                 state = State.PLACED
                 dice.throw()
                 state = State.THROWN
-    # elif state == State.PLACED:
-    # elif state == State.DONE:
 
 w.run()
