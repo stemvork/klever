@@ -30,45 +30,52 @@ class Fields(w.Group):
         pos   = (25+35*i,ypos)
         bg    = self._square(pos, color=self.color, size=40)
         return self._square(pos) # white square
+# (45) fields are all empty condition
+    def _empty(self):
+        return len(self.scores) == 0
+# (44) refactor these three lines into function
+    def _play(self, die):
+        if len(self.scores) < 11:
+            self.scores.append(True)
+            self.cross(die)
+            return True
+        else: return False
+# (48) separate the same color or white logic
+    def _same_or_white(self, die):
+        return self.color == colors[die.color] or die.color == 5
 # (13) return false if invalid move
-    def play(self, value):
-# (30) move these color specific checks in play and cross out of field class
-        # TODO Code-smell
-        if self.color == colors[2]: # green
-            if len(self.scores) < 11:
+    def play(self, die):
+        value, color = die.value, die.color
+        if self._same_or_white(die):
+# (30) move non-color specific checks in play and cross
+# (46) fix smelly nested ifs in play logic
+            if self._empty(): return self._play(die)
+            if self.color == colors[2]: # green
                 if int("12345123456"[len(self.scores)]) <= value:
-                    self.scores.append(True)
-                    self.cross(value)
-                    # print(f"Scored {len(self.scores)}")
-                    return True
-        if self.color == colors[3]: # orange
-            if len(self.scores) < 11:
-                self.scores.append(True)
-                self.cross(value)
-                # print(f"Scored {len(self.scores)}")
-                return True
-        if self.color == colors[4]: # purple
-            if len(self.scores) < 11:
-                if len(self.scores) == 0 or value > self.scores[-1]\
-                        or self.scores[-1] == 6:
-                    self.scores.append(value)
-                    self.cross(value)
-                    # print(f"Scored {len(self.scores)}")
-                    return True
+                    return self._play(die)
+            elif self.color == colors[3]: # orange
+                return self._play(die)
+            elif self.color == colors[4]: # purple field
+                prev_score = self.scores[-1]
+                if value > prev_score or prev_score == 6:
+                    return self._play(die)
         return False
-    def cross(self, value):
+    def cross(self, die):
         cindex = len(self.scores)-1
         pos = self.whites[cindex].pos
         tpos = (pos[0]+2,pos[1]+4)
-        if self.color == colors[2]: # green
+        fontsize = 13
+        _text = str(die.value)
+        _different = [colors[2]]
+# (47) differentiate green (and later yellow and blue)
 # (16) larger cross, but also remove the label behind it 
-            self.layer.add_label("X",pos=add((3,2),tpos),
-                    align='center',fontsize=17, color='black')
+        if self.color in _different:
+            tpos = add((3,2),tpos) 
+            fontsize = 17
+            _text = "X"
             self.reqs[cindex].delete()
-            # print(len(self.reqs))
-        if self.color in [colors[3], colors[4]]: # orange or purple
-            self.layer.add_label(str(value),align='center',fontsize=13,
-                    color='black',pos=tpos)
+        self.layer.add_label(_text,pos=tpos,align='center',fontsize=fontsize,
+                color='black')
 
 # (25) separately draw green margin
 scene.layers[10].add_rect(color=colors[2],width=scene.width-10,height=15,
@@ -230,8 +237,10 @@ class Dice(w.Group):
         # self.rects.pos = pos
         # self.dots.pos  = pos
     def select(self, pos): # returns index only
-        return [i for i, die in enumerate(self.dice) if\
-                die.rect.bounds.collidepoint(pos)][0]
+# (43) fix bug regarding pressing besides a die
+        dids = [i for i, die in enumerate(self.dice) if\
+                die.rect.bounds.collidepoint(pos)]
+        return dids[0] if dids else None
 # (21) use add and take for moving to dice or to silver
     def add(self, die): 
         die.rect.delete()
@@ -301,13 +310,13 @@ def click_die_then_field(pos):
     mx, my = pos
     if cdtf_expect == 0:
         if dice.get_bound().collidepoint(pos):
-            print("DIE")
             cdtf_die = dice.select(pos) # index only
-            cdtf_expect = 1
+            if cdtf_die is not None:
+# (42) only process the die click if a die was pressed
+                cdtf_expect = 1
             return False
     elif cdtf_expect == 1:
         if my > tops[0]-15: # actually pressing field
-            print("FIELD")
             return play_to_field(pos)
     else:
         print("Unexpected behavior 1.")
@@ -318,17 +327,15 @@ def play_to_field(pos):
     global cdtf_expect, cdtf_die, dice, silver
     mx, my  = pos
     success = False
-    value   = dice.dice[cdtf_die].value
+    die = dice.dice[cdtf_die]
+    value = die.value
 
     if my > tops[0]-10 and my < tops[0]+30:
-        print("GREEN")
-        success = greens.play(value)
+        success = greens.play(die)
     elif my > tops[1]-20 and my < tops[1]+20:
-        print("ORANGE")
-        success = oranges.play(value)
+        success = oranges.play(die)
     elif my > tops[2]-20 and my < tops[2]+20:
-        print("PURPLE")
-        success = purples.play(value)
+        success = purples.play(die)
     if success:
         cdtf_expect = 0
         if silver is None:
