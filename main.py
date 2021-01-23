@@ -110,34 +110,75 @@ purples = Fields(scene.layers[10], ypos=tops[2], color=colors[4])
 
 # (2) die needs to be thrown, drawn and grouped (no dots)
 class Dice(w.Group):
-    def __init__(self, layer):
+# (20) allow the making of empty dice object
+    def __init__(self, layer, empty=False):
         super().__init__(self)
         self.layer = layer
-        self.dice = [self.die(i) for i in range(6)]
-    def die(self, i):
+        self.pos = (0, 0)
+        # self.dice = [self.die(i) for i in range(6)]
+# (18) change from dice to groups of values, rects and dots
+        if not empty:
+            ids, values, rects, dots = zip(*[self.die(i) for i in range(6)])
+            self.ids = list(ids)
+            self.values = list(values)
+            self.rects = w.Group(rects)
+            self.dots = w.Group(dots)
+        else:
+            self.ids = []
+            self.values = []
+            self.rects = w.Group([])
+            self.dots = w.Group([])
+# (19) get the bound union of all the dice bounds
+    def get_bound(self):
+        _bound = self.rects[0].bounds
+        for rect in self.rects[1:]:
+            _bound = _bound.union(rect.bounds)
+        return _bound
+    def die(self, i, value=None):
         rect = self.layer.add_rect(
-            color=colors[i],width=30,height=30,pos=(25+35*i,25))
-        value = random.randint(1,6)
-        dots = w.Group(self.dots(rect.pos, value))
-        return (value, rect, dots)
+            color=colors[i],width=30,height=30,pos=(35*i,0))
+        value = random.randint(1,6) if not value else value
+        dots = w.Group(self.adddots(rect.pos, value))
+# (22) include the color index in the tuple
+        return (i, value, rect, dots)
+    def move(self, pos):
+        pos = add((-self.get_bound().width/2+15,0),pos)
+        self.rects.pos = pos
+        self.dots.pos  = pos
     def select(self, pos): # returns index only
         # return list(filter(lambda x: x[1].bounds.collidepoint(pos), self.dice))[0]
-        return [i for i, die in enumerate(self.dice) if
-                die[1].bounds.collidepoint(pos)][0]
+        return [i for i, rect in enumerate(self.rects) if\
+                rect.bounds.collidepoint(pos)][0]
+        # return [i for i, die in enumerate(self.dice) if # TODO
+        #         die[1].bounds.collidepoint(pos)][0]
+# (21) use add and take for moving to dice or to silver
+    def add(self, die): # color index i/c and value v
+        i, v, r, d = die
+        r.delete()
+        d.clear()
+        i, value, rect, dot = self.die(i, v)
+        self.values.append(value)
+        self.rects.append(rect)
+        self.dots.append(dot)
+    def take(self, i):
+        return self.ids.pop(i), self.values.pop(i), self.rects.pop(i), self.dots.pop(i)
     def discard(self, dindex):
-        value, rect, dots = self.dice[dindex]
-        rect.delete()
-        dots.clear()
-        self.dice.pop(dindex)
+        self.rects[dindex].clear()
+        self.dots[dindex].clear()
+        self.ids.pop(dindex)
+        self.values.pop(dindex)
+        self.rects.pop(dindex)
+        self.dots.pop(dindex)
     def throw(self, i=None):
-        values, rects, dots = zip(*self.dice)
-        [dot.clear() for dot in dots]
-        new_values = [random.randint(1,6) for i in range(6)]
-        new_dots   = [w.Group(self.dots(rect.pos, value)) 
-                for rect, value in zip(rects, new_values)]
-        self.dice = list(zip(new_values, rects, new_dots))
+        # values, rects, dots = zip(*self.dice)
+        [dot.clear() for dot in self.dots]
+        self.ids    = [0, 1, 2, 3, 4, 5]
+        self.values = [random.randint(1,6) for i in range(6)]
+        self.dots   = [w.Group(self.adddots(rect.pos, value)) 
+                for rect, value in zip(self.rects, self.values)]
+        # self.dice = list(zip(new_values, rects, new_dots))
 # (5) die needs to have dots drawn
-    def dots(self, pos, value):
+    def adddots(self, pos, value):
         if value == 1:
             return [self.dot(pos)]
         if value == 2:
@@ -171,10 +212,16 @@ class Dice(w.Group):
         return self.layer.add_circle(
                 radius=2.7,color='#111111',pos=pos)
     def __str__(self):
-        return str(list(map(lambda x: x[0], self.dice)))
+        return ", ".join([f"{i}:{v}" for i, v in zip(self.ids, self.values)])
 
 dice = Dice(scene.layers[20])
-print(dice)
+dice.move((scene.width/2, 25))
+
+scene.layers[30].add_rect(color='#444444',width=scene.width,
+        height=40,pos=(scene.width/2, 70))
+silver = Dice(scene.layers[30], empty=True)
+silver.centerx = scene.width/2
+# silver.move((scene.width/2, 70))
 
 # (4) press space to test new turn/throwing dice again
 @w.event
@@ -205,7 +252,7 @@ def play_to_field(pos):
     global cdtf_expect, cdtf_die
     mx, my  = pos
     success = False
-    value   = dice.dice[cdtf_die][0]
+    value   = dice.values[cdtf_die]
 
     if my > tops[0]-10 and my < tops[0]+30:
         success = greens.play(value)
@@ -215,7 +262,8 @@ def play_to_field(pos):
         success = purples.play(value)
     if success:
         cdtf_expect = 0
-        dice.discard(cdtf_die) # for now, discard die, later silver platter
+        # dice.discard(cdtf_die) # for now, discard die, later silver platter
+        silver.add(dice.take(cdtf_die))
         cdtf_die = None
     else: # do nothing if move was not valid
         cdtf_expect = 0
