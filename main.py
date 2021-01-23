@@ -1,14 +1,13 @@
 import wasabi2d as w
 import random # needed for die
+from enum import Enum
 from functools import reduce # for bounds union
 
 # (3) define some _pretty_ distinguishable colors
-colors = ["#fed402","#0477bb","#02a039",
-          "#ef7c02","#925ea4", "#ffffff"]
+colors = ["#fed402","#0477bb","#02a039", "#ef7c02","#925ea4", "#ffffff"]
 
 # (6) always add tuples
-def add(s,t):
-    return tuple(map(sum, zip(s,t)))
+def add(s,t): return tuple(map(sum, zip(s,t)))
 
 # (0) basic scene
 scene = w.Scene(width=400,height=400,background='#111111')
@@ -25,17 +24,16 @@ class Fields(w.Group):
         self.scores = []
 # (27) proto square function to separate some logic
     def _square(self, pos, color='white', size=30):
-        return self.layer.add_rect(
-                color=color,width=size,height=size,pos=pos)
+        return self.layer.add_rect(color=color,width=size,height=size,pos=pos)
 # (24) colored square behind white square, try to move labels away
     def square(self, i, ypos):
         pos   = (25+35*i,ypos)
         bg    = self._square(pos, color=self.color, size=40)
-        white = self._square(pos)
-        return white
+        return self._square(pos) # white square
 # (13) return false if invalid move
     def play(self, value):
 # (30) move these color specific checks in play and cross out of field class
+        # TODO Code-smell
         if self.color == colors[2]: # green
             if len(self.scores) < 11:
                 if int("12345123456"[len(self.scores)]) <= value:
@@ -212,7 +210,7 @@ class Dice(w.Group):
 # (19) get the bound union of all the dice bounds
 # (35) write the bound union function in the newer fashion
     def get_bound(self): 
-        bounds = [die.bounds for die in self.dice]
+        bounds = [rect.bounds for rect in self.rects]
         return reduce(lambda a, b: a.union(b), bounds)
         # _bound = bounds[0]
         # for bound in bounds[1:]:
@@ -238,13 +236,10 @@ class Dice(w.Group):
     def add(self, die): 
         die.rect.delete()
         die.dots.clear()
-        print(self.layer)
         _die = Die(layer=self.layer, color=die.color, value=die.value)
-        print(len(self.rects))
         self.rects.append(_die.rect)
         self.dots.append(_die.dots)
         self.dice.append(_die)
-        print(len(self.rects))
         self.arrange()
     def take(self, i):
         _list1 = self.rects.explode()
@@ -255,13 +250,17 @@ class Dice(w.Group):
         self.dots  = w.Group(_subl2)
         self.arrange()
         return self.dice.pop(i)
-    def discard(self, dindex): # TODO
-        self.rects[dindex].clear()
-        self.dots[dindex].clear()
-        self.ids.pop(dindex)
-        self.values.pop(dindex)
-        self.rects.pop(dindex)
-        self.dots.pop(dindex)
+    def clear(self):
+        self.rects.clear()
+        self.dots.clear()
+        # self.clear()
+    # def discard(self, dindex): # TODO
+    #     self.rects[dindex].clear()
+    #     self.dots[dindex].clear()
+    #     self.ids.pop(dindex)
+    #     self.values.pop(dindex)
+    #     self.rects.pop(dindex)
+    #     self.dots.pop(dindex)
     def throw(self, i=None):
         for die in self.dice:
             dots = die.throw() 
@@ -287,40 +286,48 @@ silver = None
 # (4) press space to test new turn/throwing dice again
 @w.event
 def on_key_down(key):
+    global dice
     if key == w.keys.SPACE:
-        dice.throw()
+        # dice.throw()
         print(dice)
 
+liney = tops[0]-20
+# scene.layers[100].add_line([(0,liney),(scene.width,liney)],color='red')
 # (10) click a die to play it to a field
 cdtf_expect = 0 # 0 for die, 1 for field
 cdtf_die = None
 def click_die_then_field(pos):
-    global cdtf_expect, cdtf_die
+    global cdtf_expect, cdtf_die, dice
     mx, my = pos
     if cdtf_expect == 0:
-        if my < 60 and mx < 240:
+        if dice.get_bound().collidepoint(pos):
+            print("DIE")
             cdtf_die = dice.select(pos) # index only
-            # print(f'selected {cdtf_die}')
             cdtf_expect = 1
+            return False
     elif cdtf_expect == 1:
-        if my > tops[0]-30: # actually pressing field
-            play_to_field(pos)
+        if my > tops[0]-15: # actually pressing field
+            print("FIELD")
+            return play_to_field(pos)
     else:
         print("Unexpected behavior 1.")
 
 # (12) put the value into the field if purple or orange
 # (14) put an X in the field if green
 def play_to_field(pos):
-    global cdtf_expect, cdtf_die, silver
+    global cdtf_expect, cdtf_die, dice, silver
     mx, my  = pos
     success = False
     value   = dice.dice[cdtf_die].value
 
     if my > tops[0]-10 and my < tops[0]+30:
+        print("GREEN")
         success = greens.play(value)
-    elif my > tops[1] and my < tops[1]+20:
+    elif my > tops[1]-20 and my < tops[1]+20:
+        print("ORANGE")
         success = oranges.play(value)
     elif my > tops[2]-20 and my < tops[2]+20:
+        print("PURPLE")
         success = purples.play(value)
     if success:
         cdtf_expect = 0
@@ -332,16 +339,36 @@ def play_to_field(pos):
             silver.add(dice.take(cdtf_die)) 
         dice.arrange()
         cdtf_die = None
+        return True
     else: # do nothing if move was not valid
         cdtf_expect = 0
         cdtf_die = None
+        return False
 
 # (11) determine desired interactions through state
-state = 0
+class State(Enum):
+    THROWN = 1 # dice were thrown please select
+    PLACED = 2 # die was chosen and place, please throw
+    DONE   = 3 # no more rolls or placements, passive plays
+state = State.THROWN
 
 @w.event
 def on_mouse_down(pos):
-    if state == 0:
-        click_die_then_field(pos)
+    global state, dice, silver
+    if state == State.THROWN:
+        if click_die_then_field(pos):
+            if len(silver.dice) == 3:
+                state = State.DONE
+                dice.clear()
+                silver.clear()
+                dice = Dice(scene.layers[20])
+                silver = None
+                state = State.THROWN
+            else:
+                state = State.PLACED
+                dice.throw()
+                state = State.THROWN
+    # elif state == State.PLACED:
+    # elif state == State.DONE:
 
 w.run()
